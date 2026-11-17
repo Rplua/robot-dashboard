@@ -6,6 +6,7 @@ dependencies = [
     "abb-rws-8",
     "fastapi>=0.162.7",
     "uvicorn>=0.54.0",
+    "websockets>=17.4",
 ]
 
 [tool.uv.sources]

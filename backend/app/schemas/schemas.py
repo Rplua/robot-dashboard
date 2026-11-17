@@ -23,3 +23,17 @@ class ControllerIdentityResponse(BaseModel):
 
 class RapidExecutionResponse(BaseModel):
     state: str
+
+class RapidVariableWriteRequest(BaseModel):
+    value: str
+
+
+class WriteAccessStatusResponse(BaseModel):
+    held: bool
+    holder_id: str | None = None
+    holder_name: str | None = None
+
+
+class RapidProgramPointerRequest(BaseModel):
+    module: str
+    routine: str
