@@ -1,5 +1,5 @@
 import { getControllerIdentity, disconnectController } from '../api/controller/controller'
-import { getRapidExecution, startRapid, setProgramPointer } from '../api/rapid/rapid'
+import { readRapidVariable, writeRapidVariable, getRapidExecution, startRapid, stopRapid, resetProgramPointer, setProgramPointer } from '../api/rapid/rapid'
 import type { RapidExecutionResponse } from '../api/rapid/rapid.types'
 import type { ControllerIdentityResponse } from '../api/controller/controller.types'
 import { useState, useEffect } from 'react'
@@ -16,8 +16,90 @@ export default function Dashboard() {
     const [pointerStatus, setPointerStatus] = useState('')
     const [isSettingPointer, setIsSettingPointer] = useState(false)
     const [selectedRoutine, setSelectedRoutine] = useState("UWU")
+    const [pendingCommand, setPendingCommand] = useState<string | null>(null)
+    const [commandError, setCommandError] = useState('')
+    const [commandStatus, setCommandStatus] = useState('')
+    const [variableValue, setVariableValue] = useState<string | null>(null)
+    const [newValue, setNewValue] = useState('')
+    const [variableError, setVariableError] = useState('')
+    const [variableStatus, setVariableStatus] = useState('')
+    const [isWriting, setIsWriting] = useState(false)
+    const [liveStatus, setLiveStatus] = useState('Connecting…')
     const navigate = useNavigate()
 
+
+    const handleWriteVariable = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        setVariableError('')
+        setVariableStatus('')
+        setIsWriting(true)
+        try {
+            await writeRapidVariable('T_ROB1', 'CoordinationData', 'test_value', newValue)
+            const result = await readRapidVariable('T_ROB1', 'CoordinationData', 'test_value')
+            setVariableValue(result.value)
+            setVariableStatus(`Value read back: ${result.value}`)
+        } catch (error) {
+            setVariableError(error instanceof Error ? error.message : 'Variable write failed')
+        } finally {
+            setIsWriting(false)
+        }
+    }
+
+    useEffect(() => {
+        if (!variableStatus) return
+        const timer = setTimeout(() => setVariableStatus(''), 2000)
+        return () => clearTimeout(timer)
+    }, [variableStatus])
+
+    useEffect(() => {
+        let active = true
+        let receivedEvent = false
+        const controller = new AbortController()
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const socket = new WebSocket(`${protocol}//${window.location.host}/ws/rapid`)
+
+        socket.onopen = () => {
+            if (active) setLiveStatus('Connected')
+        }
+        socket.onmessage = (event) => {
+            if (!active) return
+            try {
+                const message = JSON.parse(event.data)
+                if (typeof message.value === 'string') {
+                    receivedEvent = true
+                    setVariableValue(message.value)
+                    setLiveStatus('Receiving updates')
+                } else if (typeof message.error === 'string') {
+                    setVariableError(message.error)
+                    setLiveStatus('Subscription error')
+                }
+            } catch {
+                setVariableError('Invalid subscription message')
+            }
+        }
+        socket.onerror = () => {
+            if (active) {
+                setLiveStatus('Connection error')
+                setVariableError('Could not connect to the live variable subscription')
+            }
+        }
+        socket.onclose = () => {
+            if (active) setLiveStatus('Disconnected')
+        }
+        readRapidVariable('T_ROB1', 'CoordinationData', 'test_value', controller.signal)
+            .then((result) => {
+                if (active && !receivedEvent) setVariableValue(result.value)
+            })
+            .catch((error: unknown) => {
+                if (active) setVariableError(error instanceof Error ? error.message : 'Variable read failed')
+            })
+
+        return () => {
+            active = false
+            controller.abort()
+            socket.close()
+        }
+    }, [])
 
     const handleDisconnect = async () => {
         try {
@@ -28,11 +110,19 @@ export default function Dashboard() {
         }
     }
 
-    const handleStart = async () => {
+    const handleCommand = async (command: () => Promise<void>, label: string) => {
+        setCommandError('')
+        setCommandStatus('')
+        setPendingCommand(label)
         try {
-            await startRapid()
+            await command()
+            setCommandStatus(`${label} accepted by the controller`)
+            const response = await getRapidExecution()
+            setExecutionState(response.state)
         } catch (error) {
-            setError(error instanceof Error ? error.message : 'Connection failed')
+            setCommandError(error instanceof Error ? error.message : 'RAPID command failed')
+        } finally {
+            setPendingCommand(null)
         }
     }
 
@@ -62,6 +152,18 @@ export default function Dashboard() {
     }
 
     useEffect(() => {
+        if (!pointerStatus) return
+        const timer = setTimeout(() => setPointerStatus(''), 2000)
+        return () => clearTimeout(timer)
+    }, [pointerStatus])
+
+    useEffect(() => {
+        if (!commandStatus) return
+        const timer = setTimeout(() => setCommandStatus(''), 2000)
+        return () => clearTimeout(timer)
+    }, [commandStatus])
+
+    useEffect(() => {
         getControllerIdentity()
             .then((identity) => setIdentity(identity))
             .catch((error: unknown) => {
@@ -74,15 +176,27 @@ export default function Dashboard() {
     }, [])
 
     useEffect(() => {
-        getRapidExecution()
-            .then((response) => setExecutionState(response.state))
-            .catch((error: unknown) => {
-                setError(
-                    error instanceof Error
-                        ? error.message
-                        : 'Could not get controller state'
-                )
-            })
+        let active = true
+        let timer: ReturnType<typeof setTimeout>
+
+        async function refreshExecution() {
+            try {
+                const response = await getRapidExecution()
+                if (active) setExecutionState(response.state)
+            } catch (error) {
+                if (active) {
+                    setCommandError(error instanceof Error ? error.message : 'Could not refresh RAPID state')
+                }
+            } finally {
+                if (active) timer = setTimeout(refreshExecution, 1000)
+            }
+        }
+
+        void refreshExecution()
+        return () => {
+            active = false
+            clearTimeout(timer)
+        }
     }, [])
 
     if (error) {
@@ -106,7 +220,7 @@ export default function Dashboard() {
                     <button
                         type="button"
                         onClick={handleDisconnect}
-                        className="justify-self-end rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100"
+                        className="cursor-pointer transition duration-150 active:scale-95 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 justify-self-end rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200"
                     >
                         Disconnect
                     </button>
@@ -167,25 +281,61 @@ export default function Dashboard() {
                         </div>
                         <button
                             type="submit"
-                            disabled={isSettingPointer}
-                            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 disabled:opacity-50"
+                            disabled={isSettingPointer || pendingCommand !== null}
+                            className="cursor-pointer transition duration-150 active:scale-95 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200"
                         >
                             {isSettingPointer ? 'Setting pointer…' : 'Set pointer'}
                         </button>
                         {pointerError && <p role="alert" className="text-sm text-zinc-700">{pointerError}</p>}
                         {pointerStatus && <p role="status" className="text-sm text-zinc-700">{pointerStatus}</p>}
                     </form>
-                    <div className="mt-4 flex flex-wrap  gap-2">
-                        <button type="button" className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white" onClick={handleStart}>
-                            Start
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="button" className="cursor-pointer transition duration-150 active:scale-95 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 active:bg-black" onClick={() => void handleCommand(startRapid, 'Start')}
+                            disabled={pendingCommand !== null || isSettingPointer}>
+                            {pendingCommand === 'Start' ? 'Starting…' : 'Start / Resume'}
                         </button>
-                        <button type="button" className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900">
-                            Stop
+                        <button type="button" onClick={() => void handleCommand(stopRapid, 'Stop')}
+                            disabled={pendingCommand !== null || isSettingPointer}
+                            className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 transition duration-150 hover:bg-zinc-100 active:scale-95 active:bg-zinc-200 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500">
+                            {pendingCommand === 'Stop' ? 'Stopping…' : 'Stop'}
                         </button>
-                        <button type="button" className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900">
-                            PP to Main
+                        <button type="button" onClick={() => void handleCommand(resetProgramPointer, 'PP to Main')}
+                            disabled={pendingCommand !== null || isSettingPointer}
+                            className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 transition duration-150 hover:bg-zinc-100 active:scale-95 active:bg-zinc-200 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500">
+                            {pendingCommand === 'PP to Main' ? 'Resetting…' : 'PP to Main'}
                         </button>
                     </div>
+                    {commandError && <p role="alert" className="mt-3 text-sm text-zinc-700">{commandError}</p>}
+                    {commandStatus && <p role="status" className="mt-3 text-sm text-zinc-700">{commandStatus}</p>}
+                </section>
+                <section className="mt-4 rounded-xl border border-zinc-200 bg-white p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h2 className="text-base font-semibold text-zinc-950">Live variable</h2>
+                        <span role="status" className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700">{liveStatus}</span>
+                    </div>
+                    <p className="mt-3 break-all font-mono text-xs text-zinc-500">T_ROB1 / CoordinationData / test_value</p>
+                    <p aria-live="polite" className="mt-2 break-all font-mono text-4xl font-semibold text-zinc-950">{variableValue ?? 'Loading…'}</p>
+                    <form onSubmit={handleWriteVariable} className="mt-5">
+                        <label htmlFor="variable-value" className="block text-sm font-medium text-zinc-700">New RAPID value</label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            <input
+                                id="variable-value"
+                                required
+                                value={newValue}
+                                onChange={(event) => setNewValue(event.target.value)}
+                                className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
+                            />
+                            <button
+                                type="submit"
+                                disabled={isWriting || pendingCommand !== null || isSettingPointer}
+                                className="cursor-pointer rounded-lg bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+                            >
+                                {isWriting ? 'Writing…' : 'Write'}
+                            </button>
+                        </div>
+                    </form>
+                    {variableError && <p role="alert" className="mt-3 text-sm text-zinc-700">{variableError}</p>}
+                    {variableStatus && <p role="status" className="mt-3 text-sm text-zinc-700">{variableStatus}</p>}
                 </section>
             </main>
         </div>

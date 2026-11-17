@@ -31,3 +31,16 @@ Use a dark graphite background, thin panel borders, Inter for labels, and IBM Pl
 
 - [ABB AppStudio](https://www.abb.com/global/en/areas/robotics/products/software/appstudio) is the reference for grouping controls by robot operation.
 - [Grafana Stat panels](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/stat/) are the reference for quickly reading the live counter and status.
+
+## Implemented demo
+
+The connection form and dashboard are implemented in src/pages. The dashboard
+includes RAPID commands, task/module entry, a demo routine selector, execution
+state polling, and the Live variable card for T_ROB1/CoordinationData/test_value.
+The card reads the initial value, writes a new RAPID literal, reads it back,
+and receives later changes through /ws/rapid. Vite proxies both HTTP and
+WebSocket traffic to FastAPI.
+
+See the repository README for setup and virtual-controller test steps.
+The next phase will move dashboard sections into components and extract shared
+logic into hooks.
