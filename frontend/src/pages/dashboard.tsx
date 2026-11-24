@@ -5,6 +5,7 @@ import type { ControllerIdentityResponse } from '../api/controller/controller.ty
 import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
+import Header from '../components/dashboard/Header'
 
 export default function Dashboard() {
     const [identity, setIdentity] = useState<ControllerIdentityResponse | null>(null)
@@ -204,28 +205,11 @@ export default function Dashboard() {
     }
     return (
         <div className="min-h-screen bg-zinc-100">
-            <header className="border-b border-zinc-200 bg-white">
-                <div className="mx-auto grid max-w-5xl items-center gap-3 px-4 py-4 md:grid-cols-3">
-                    <div className="text-left text-sm text-zinc-700">
-                        {identity ? (
-                            <>
-                                <p className="font-medium text-zinc-950"> Controller Name: {identity.name}</p>
-                                <p>Controller type: {identity.type}</p>
-                            </>
-                        ) : (
-                            <p>Loading controller…</p>
-                        )}
-                    </div>
-                    <h1 className="text-center text-xl font-semibold text-zinc-950">Dashboard</h1>
-                    <button
-                        type="button"
-                        onClick={handleDisconnect}
-                        className="cursor-pointer transition duration-150 active:scale-95 disabled:cursor-wait disabled:opacity-50 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 justify-self-end rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200"
-                    >
-                        Disconnect
-                    </button>
-                </div>
-            </header>
+            <Header
+                title="Dashboard"
+                identity={identity}
+                onDisconnect={handleDisconnect}
+            />
             <main className="mx-auto max-w-5xl px-4 py-8">
                 <section className="rounded-xl border border-zinc-200 bg-white p-5">
                     <div className="flex items-center justify-between gap-3">
