@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import Header from '../components/dashboard/Header'
+import LiveVariableCard from '../components/dashboard/LiveVariableCard'
 
 export default function Dashboard() {
     const [identity, setIdentity] = useState<ControllerIdentityResponse | null>(null)
@@ -292,35 +293,19 @@ export default function Dashboard() {
                     {commandError && <p role="alert" className="mt-3 text-sm text-zinc-700">{commandError}</p>}
                     {commandStatus && <p role="status" className="mt-3 text-sm text-zinc-700">{commandStatus}</p>}
                 </section>
-                <section className="mt-4 rounded-xl border border-zinc-200 bg-white p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h2 className="text-base font-semibold text-zinc-950">Live variable</h2>
-                        <span role="status" className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700">{liveStatus}</span>
-                    </div>
-                    <p className="mt-3 break-all font-mono text-xs text-zinc-500">T_ROB1 / CoordinationData / test_value</p>
-                    <p aria-live="polite" className="mt-2 break-all font-mono text-4xl font-semibold text-zinc-950">{variableValue ?? 'Loading…'}</p>
-                    <form onSubmit={handleWriteVariable} className="mt-5">
-                        <label htmlFor="variable-value" className="block text-sm font-medium text-zinc-700">New RAPID value</label>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            <input
-                                id="variable-value"
-                                required
-                                value={newValue}
-                                onChange={(event) => setNewValue(event.target.value)}
-                                className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
-                            />
-                            <button
-                                type="submit"
-                                disabled={isWriting || pendingCommand !== null || isSettingPointer}
-                                className="cursor-pointer rounded-lg bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 active:scale-95 disabled:cursor-wait disabled:opacity-50"
-                            >
-                                {isWriting ? 'Writing…' : 'Write'}
-                            </button>
-                        </div>
-                    </form>
-                    {variableError && <p role="alert" className="mt-3 text-sm text-zinc-700">{variableError}</p>}
-                    {variableStatus && <p role="status" className="mt-3 text-sm text-zinc-700">{variableStatus}</p>}
-                </section>
+                <LiveVariableCard
+                    title="Live variable"
+                    dataUrl="T_ROB1 / CoordinationData / test_value"
+                    rapidValue={variableValue}
+                    newValue={newValue}
+                    liveStatus={liveStatus}
+                    onValueChange={setNewValue}
+                    onSubmit={handleWriteVariable}
+                    isWriting={isWriting}
+                    disabled={isWriting || pendingCommand !== null || isSettingPointer}
+                    error={variableError}
+                    status={variableStatus}
+                />
             </main>
         </div>
     )
